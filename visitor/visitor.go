@@ -2,24 +2,34 @@ package visitor
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/go-redis/redis"
 	"github.com/julienschmidt/httprouter"
+	nsqclient "github.com/nararya-anugraha/big-project/nsq"
+	"github.com/nsqio/go-nsq"
 )
 
 // visitor.handler
 
+const key = "key:big-project:visitor-count"
+
 type visitorModuleType struct {
 	redisClient *redis.Client
+	consumer    *nsqclient.NSQConsumerType
+	producer    *nsqclient.NSQProducerType
 }
 
-func Wire(router *httprouter.Router, redisClient *redis.Client) {
+func Wire(router *httprouter.Router, redisClient *redis.Client, consumer *nsqclient.NSQConsumerType, producer *nsqclient.NSQProducerType) {
 	visitorModule := visitorModuleType{
 		redisClient: redisClient,
+		consumer:    consumer,
+		producer:    producer,
 	}
 	router.GET("/api/visitor", visitorModule.getVisitorHandler)
+	consumer.AddHandler(visitorModule.incrementVisitorCount)
 }
 
 type visitorResponseType struct {
@@ -29,12 +39,11 @@ type visitorResponseType struct {
 }
 
 func (visitorModule *visitorModuleType) getVisitorHandler(writer http.ResponseWriter, request *http.Request, params httprouter.Params) {
-	key := "key:big-project:visitor-count"
 
 	visitorCountString, err := visitorModule.redisClient.Get(key).Result()
 	if err == redis.Nil {
 		//Key doesn't exist
-		visitorCountString = "0"
+		visitorCountString = "1"
 	}
 
 	visitorCount, err := strconv.Atoi(visitorCountString)
@@ -43,12 +52,7 @@ func (visitorModule *visitorModuleType) getVisitorHandler(writer http.ResponseWr
 		return
 	}
 
-	visitorCount++
-	err = visitorModule.redisClient.Set(key, visitorCount, 0).Err()
-	if err != nil {
-		handleError(writer, err)
-		return
-	}
+	visitorModule.producer.Publish("incrementVisitorCount")
 
 	encoder := json.NewEncoder(writer)
 	err = encoder.Encode(visitorCount)
@@ -58,11 +62,39 @@ func (visitorModule *visitorModuleType) getVisitorHandler(writer http.ResponseWr
 	}
 }
 
+func (visitorModule *visitorModuleType) incrementVisitorCount(message *nsq.Message) error {
+	var messageString string
+
+	json.Unmarshal(message.Body, &messageString)
+	fmt.Println(messageString)
+	if messageString != "incrementVisitorCount" {
+		return nil
+	}
+
+	visitorCountString, err := visitorModule.redisClient.Get(key).Result()
+	if err == redis.Nil {
+		//Key doesn't exist
+		visitorCountString = "0"
+	}
+
+	visitorCount, err := strconv.Atoi(visitorCountString)
+	if err != nil {
+		return err
+	}
+
+	visitorCount++
+	err = visitorModule.redisClient.Set(key, visitorCount, 0).Err()
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 func handleError(writer http.ResponseWriter, err error) {
 	encoder := json.NewEncoder(writer)
 	encoder.Encode(err)
-
 	writer.Header().Add("status", "500")
 	writer.Header().Add("content-type", "application/json")
-
 }

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/nararya-anugraha/big-project/nsq"
+
 	gcfg "gopkg.in/gcfg.v1"
 
 	"github.com/julienschmidt/httprouter"
@@ -18,6 +20,7 @@ import (
 type ConfigType struct {
 	Database db.DatabaseConfigType
 	Redis    redis.RedisConfigType
+	NSQ      nsq.NSQConfigType
 }
 
 func main() {
@@ -35,10 +38,22 @@ func Main() int {
 
 	redisClient := redis.GetRedisClient(&config.Redis)
 
+	nsqConsumer, err := nsq.CreateConsumer(&config.NSQ)
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
+	nsqProducer, err := nsq.CreateProducer(&config.NSQ)
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
 	router := httprouter.New()
 
 	user.Wire(router, db)
-	visitor.Wire(router, redisClient)
+	visitor.Wire(router, redisClient, nsqConsumer, nsqProducer)
+
+	go nsqConsumer.Run()
 
 	log.Fatal(http.ListenAndServe(":8080", router))
 	fmt.Println("App Started")
