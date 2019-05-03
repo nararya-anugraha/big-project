@@ -26,7 +26,7 @@ func Wire(router *httprouter.Router, db *sqlx.DB) {
 
 type User struct {
 	UserID     int64      `db:"user_id" json:"user_id"`
-	UserName   *string    `db:"user_name" json:"user_name"`
+	FullName   *string    `db:"full_name" json:"full_name"`
 	MSISDN     *string    `db:"msisdn" json:"msisdn"`
 	UserEmail  *string    `db:"user_email" json:"user_email"`
 	BirthDate  *time.Time `db:"birth_date" json:"birth_date"`
@@ -36,9 +36,9 @@ type User struct {
 }
 
 type PagedUsers struct {
-	PageSize    int64   `json:"page_size"`
-	CurrentPage int64   `json:"current_page"`
-	TotalPages  int64   `json:"total_pages"`
+	PageSize    int64   `json:"pageSize"`
+	CurrentPage int64   `json:"currentPage"`
+	TotalPages  int64   `json:"totalPages"`
 	Users       []*User `json:"users"`
 	Filter      string  `json:"filter"`
 }
@@ -75,7 +75,7 @@ func handleError(writer http.ResponseWriter, err error) {
 const query = `
 select 
 	user_id, 
-	user_name,
+	full_name,
 	msisdn, 
 	user_email, 
 	birth_date, 
@@ -88,7 +88,7 @@ from ws_user
 type queryParametersType struct {
 	Limit    int64  `db:"limit"`
 	Offset   int64  `db:"offset"`
-	UserName string `db:"user_name"`
+	FullName string `db:"full_name"`
 }
 
 func (userModule *UserModuleType) getUser(pagedUsers *PagedUsers) error {
@@ -98,17 +98,17 @@ func (userModule *UserModuleType) getUser(pagedUsers *PagedUsers) error {
 
 	filteredQuery := query
 	if len(pagedUsers.Filter) > 0 {
-		filteredQuery += " where user_name ~* :user_name"
-		queryParameters.UserName = pagedUsers.Filter
+		filteredQuery += " where full_name ~* :full_name"
+		queryParameters.FullName = pagedUsers.Filter
 	}
 
 	// Get Total Pages
 	countQuery := "select count(1) from (" + filteredQuery + " ) a "
 	rows, err := userModule.db.NamedQuery(countQuery, queryParameters)
-	defer rows.Close()
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
 
 	var totalRows int64
 	rows.Next()

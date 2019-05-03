@@ -71,19 +71,8 @@ func (visitorModule *visitorModuleType) incrementVisitorCount(message *nsq.Messa
 		return nil
 	}
 
-	visitorCountString, err := visitorModule.redisClient.Get(key).Result()
-	if err == redis.Nil {
-		//Key doesn't exist
-		visitorCountString = "0"
-	}
+	err := visitorModule.redisClient.Incr(key).Err()
 
-	visitorCount, err := strconv.Atoi(visitorCountString)
-	if err != nil {
-		return err
-	}
-
-	visitorCount++
-	err = visitorModule.redisClient.Set(key, visitorCount, 0).Err()
 	if err != nil {
 		return err
 	}
